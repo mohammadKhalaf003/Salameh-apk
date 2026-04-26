@@ -1,6 +1,8 @@
 import os
 import random
 import smtplib
+import requests 
+import resend
 import uuid
 import cloudinary
 import cloudinary.uploader
@@ -106,31 +108,23 @@ def get_current_user(
 def send_real_email_otp(target_email: str) -> Optional[str]:
     otp_code = str(random.randint(100000, 999999))
 
-    sender_email = os.getenv("SENDER_EMAIL")
-    # تنظيف كلمة السر من أي فراغات موجودة في الصورة
-    app_password = os.getenv("APP_PASSWORD").replace(" ", "")
-
-    msg = EmailMessage()
-    msg.set_content(
-        f"Welcome to Salamah Medical System.\n\n"
-        f"Your verification code is: {otp_code}\n\n"
-        f"Please enter this code in the app to activate your account.\n"
-        f"This code is valid for 10 minutes only."
-    )
-    msg["Subject"] = "Salamah Account Verification Code"
-    msg["From"]    = SENDER_EMAIL
-    msg["To"]      = target_email
-
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=20) # مهلة قصيرة للفشل السريع
-        server.starttls() 
-        server.login(sender_email, app_password)
-        server.send_message(msg)
-        server.quit()
+        resend.api_key = os.getenv("RESEND_API_KEY")
+        resend.Emails.send({
+            "from": "Salamah <onboarding@resend.dev>",
+            "to": [target_email],
+            "subject": "Salamah Account Verification Code",
+            "text": (
+                f"Welcome to Salamah Medical System.\n\n"
+                f"Your verification code is: {otp_code}\n\n"
+                f"Please enter this code in the app to activate your account.\n"
+                f"This code is valid for 10 minutes only."
+            )
+        })
         print(f"✅ Success: OTP sent to {target_email}")
         return otp_code
     except Exception as e:
-        print(f"❌ SMTP Fatal Error: {e}")
+        print(f"❌ Resend Error: {e}")
         return None
 
 # ------------------------------------------------------------------
