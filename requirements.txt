@@ -51,8 +51,7 @@ networkx==3.6.1
 numpy==2.4.3
 onnx==1.20.1
 # onnxruntime-gpu covers both GPU and CPU; use plain onnxruntime if no GPU
-onnxruntime-gpu==1.24.4
-opencv-python-headless
+onnxruntime==1.24.4
 opencv-python-headless==4.13.0.92
 packaging==26.0
 passlib==1.7.4
