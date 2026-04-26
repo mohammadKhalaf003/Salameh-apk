@@ -92,13 +92,14 @@ def login(
     # ── Paramedic-specific checks ────────────────────────────────────────────
     # ADDED from Codebase B: "pending" status check (paramedic not yet verified)
     if role == "paramedic":
-        if user.status == "pending":
-            raise HTTPException(status_code=403, detail="pending")
-        if user.status != "active":
+        if user.status == "disabled":
             raise HTTPException(
-                status_code=403,
-                detail="Your account is disabled. Please contact the administration."
+                status_code=403, 
+                detail="paramedic_account_disabled_contact_admin" 
             )
+        
+        if user.status == "pending":
+            raise HTTPException(status_code=403, detail="paramedic_pending_approval")
 
     # ── Resolve numeric ID across role types ─────────────────────────────────
     user_id = (
