@@ -16,6 +16,9 @@ from passlib.context import CryptContext
 from dotenv import load_dotenv
 from PIL import Image, ImageOps
 import io
+from typing import Optional
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 
 load_dotenv()
 
@@ -107,42 +110,70 @@ def get_current_user(
 # ------------------------------------------------------------------
  # تأكد من وجودها في أعلى الملف
 
+# def send_real_email_otp(target_email: str) -> Optional[str]:
+#     otp_code = str(random.randint(100000, 999999))
+#     api_key = os.getenv("BREVO_KEY") # استخدم الـ API Key اللي طلعناه من Brevo
+
+#     # 1. اطبع الكود فوراً في الـ Logs (عشان تشوفه من لابتوبك الـ ASUS)
+#     print(f"🚀 [LIVE DEMO] OTP for {target_email} is: {otp_code}")
+
+#     # 2. محاولة الإرسال عبر الـ API (وليس SMTP)
+#     try:
+#         response = requests.post(
+#             "https://api.brevo.com/v3/smtp/email",
+#             headers={
+#                 "api-key": api_key,
+#                 "Content-Type": "application/json"
+#             },
+#             json={
+#                 "sender": {"name": "Salamah System", "email": "medicalsystemjo@gmail.com"},
+#                 "to": [{"email": target_email}],
+#                 "subject": "Verification Code - Salamah",
+#                 "htmlContent": f"<html><body><h1>Your code is: {otp_code}</h1></body></html>"
+#             },
+#             timeout=10
+#         )
+        
+#         if response.status_code in [200, 201, 202]:
+#             print(f"✅ OTP sent via API to {target_email}")
+#         else:
+#             print(f"⚠️ API Status: {response.status_code} - {response.text}")
+
+#         # 3. الحل الجوهري: رجّع الكود بكل الأحوال عشان التطبيق ما يعطي Error
+#         return otp_code
+
+#     except Exception as e:
+#         print(f"❌ Critical Error: {e}")
+#         # إذا انقطع النت تماماً، استخدم كود الطوارئ
+#         return "202626"
+
+
 def send_real_email_otp(target_email: str) -> Optional[str]:
     otp_code = str(random.randint(100000, 999999))
-    api_key = os.getenv("BREVO_KEY") # استخدم الـ API Key اللي طلعناه من Brevo
 
-    # 1. اطبع الكود فوراً في الـ Logs (عشان تشوفه من لابتوبك الـ ASUS)
-    print(f"🚀 [LIVE DEMO] OTP for {target_email} is: {otp_code}")
+    api_key = os.getenv("SENDGRID_API_KEY")
 
-    # 2. محاولة الإرسال عبر الـ API (وليس SMTP)
+    if not api_key:
+        print("❌ SENDGRID_API_KEY not found")
+        return None
+
+    message = Mail(
+        from_email="medicalsystemjo@gmail.com",  # لازم يكون Verified
+        to_emails=target_email,
+        subject="Salamah Account Verification",
+        html_content=f"<strong>Your OTP is: {otp_code}</strong>"
+    )
+
     try:
-        response = requests.post(
-            "https://api.brevo.com/v3/smtp/email",
-            headers={
-                "api-key": api_key,
-                "Content-Type": "application/json"
-            },
-            json={
-                "sender": {"name": "Salamah System", "email": "medicalsystemjo@gmail.com"},
-                "to": [{"email": target_email}],
-                "subject": "Verification Code - Salamah",
-                "htmlContent": f"<html><body><h1>Your code is: {otp_code}</h1></body></html>"
-            },
-            timeout=10
-        )
-        
-        if response.status_code in [200, 201, 202]:
-            print(f"✅ OTP sent via API to {target_email}")
-        else:
-            print(f"⚠️ API Status: {response.status_code} - {response.text}")
+        sg = SendGridAPIClient(api_key)
+        sg.send(message)
 
-        # 3. الحل الجوهري: رجّع الكود بكل الأحوال عشان التطبيق ما يعطي Error
+        print(f"✅ SendGrid Success: OTP sent to {target_email}")
         return otp_code
 
     except Exception as e:
-        print(f"❌ Critical Error: {e}")
-        # إذا انقطع النت تماماً، استخدم كود الطوارئ
-        return "202626"
+        print(f"❌ SendGrid Error: {e}")
+        return None
 
 # ------------------------------------------------------------------
 # Cloudinary — upload
