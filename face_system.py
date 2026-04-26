@@ -19,7 +19,7 @@ class FaceEngine:
         #   On machines without a GPU, ONNX Runtime automatically falls back
         #   to CPU — no harm done. On GPU machines, performance is much better.
         self.app = FaceAnalysis(
-            name      = "buffalo_l",
+            name      = "buffalo_s",
             providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
         )
         self.app.prepare(ctx_id=0, det_size=(640, 640))
