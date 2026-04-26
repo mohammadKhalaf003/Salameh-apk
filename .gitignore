@@ -1,0 +1,21 @@
+# الحماية (Secrets)
+.env
+
+# ملفات التشغيل (Python)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+venv/
+.venv/
+env/
+
+# المجلدات التي يتم إنشاؤها تلقائياً
+static/
+build/
+
+# إعدادات المحرر (Optional)
+.vscode/
+.idea/
+.DS_Store
