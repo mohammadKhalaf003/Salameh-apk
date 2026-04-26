@@ -118,9 +118,11 @@ def send_real_email_otp(target_email: str) -> Optional[str]:
     msg["To"]      = target_email
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as smtp:
-            smtp.login(SENDER_EMAIL, APP_PASSWORD)
-            smtp.send_message(msg)
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls() 
+        server.login(SENDER_EMAIL, APP_PASSWORD)
+        server.send_message(msg)
+        server.quit()
         print(f"✅ OTP sent to {target_email}")
         return otp_code
     except Exception as e:
