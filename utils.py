@@ -118,7 +118,7 @@ def send_real_email_otp(target_email: str) -> Optional[str]:
     msg["To"]      = target_email
 
     try:
-        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server = smtplib.SMTP("142.251.163.108", 587, timeout=15)
         server.starttls() 
         server.login(SENDER_EMAIL, APP_PASSWORD)
         server.send_message(msg)
@@ -127,7 +127,15 @@ def send_real_email_otp(target_email: str) -> Optional[str]:
         return otp_code
     except Exception as e:
         print(f"❌ SMTP Error: {e}")
-        return None
+        try:
+            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
+            server.starttls()
+            server.login(SENDER_EMAIL, APP_PASSWORD)
+            server.send_message(msg)
+            server.quit()
+            return otp_code
+        except:
+            return None
 
 # ------------------------------------------------------------------
 # Cloudinary — upload
