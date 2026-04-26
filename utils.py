@@ -106,6 +106,10 @@ def get_current_user(
 def send_real_email_otp(target_email: str) -> Optional[str]:
     otp_code = str(random.randint(100000, 999999))
 
+    sender_email = os.getenv("SENDER_EMAIL")
+    # تنظيف كلمة السر من أي فراغات موجودة في الصورة
+    app_password = os.getenv("APP_PASSWORD").replace(" ", "")
+
     msg = EmailMessage()
     msg.set_content(
         f"Welcome to Salamah Medical System.\n\n"
@@ -118,24 +122,16 @@ def send_real_email_otp(target_email: str) -> Optional[str]:
     msg["To"]      = target_email
 
     try:
-        server = smtplib.SMTP("142.251.163.108", 587, timeout=15)
+        server = smtplib.SMTP("smtp.gmail.com", 587, timeout=20) # مهلة قصيرة للفشل السريع
         server.starttls() 
-        server.login(SENDER_EMAIL, APP_PASSWORD)
+        server.login(sender_email, app_password)
         server.send_message(msg)
         server.quit()
-        print(f"✅ OTP sent to {target_email}")
+        print(f"✅ Success: OTP sent to {target_email}")
         return otp_code
     except Exception as e:
-        print(f"❌ SMTP Error: {e}")
-        try:
-            server = smtplib.SMTP("smtp.gmail.com", 587, timeout=15)
-            server.starttls()
-            server.login(SENDER_EMAIL, APP_PASSWORD)
-            server.send_message(msg)
-            server.quit()
-            return otp_code
-        except:
-            return None
+        print(f"❌ SMTP Fatal Error: {e}")
+        return None
 
 # ------------------------------------------------------------------
 # Cloudinary — upload
