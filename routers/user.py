@@ -292,6 +292,7 @@ def delete_account(
     current_user: dict    = Depends(utils.get_current_user),
     db          : Session = Depends(database.get_db)
 ):
+    # 1. جلب المستخدم مع كافة العلاقات (الاطفال والسكّنات)
     user = db.query(models.User).options(
         joinedload(models.User.children).joinedload(models.Child.face_scan),
         joinedload(models.User.face_scan)
@@ -302,24 +303,53 @@ def delete_account(
     if not user:
         raise HTTPException(status_code=404, detail="User not found.")
 
+    # 2. التحقق من كلمة المرور
     if not utils.verify_password(data.password, user.passwordhash):
         raise HTTPException(status_code=400, detail="Password is incorrect.")
 
-    for child in user.children:
-        if child.face_scan and child.face_scan.imageurl:
-            utils.delete_image_from_cloud(child.face_scan.imageurl)
+    try:
+        # --- عملية التنظيف الشاملة (Cleanup Everything) ---
 
-    if user.face_scan and user.face_scan.imageurl:
-        utils.delete_image_from_cloud(user.face_scan.imageurl)
+        # 3. حذف سجلات الفحص (ScanLogs) المرتبطة بالمواطن نفسه
+        db.query(models.ScanLog).filter(
+            models.ScanLog.matcheduserid == user.userid
+        ).delete(synchronize_session=False)
 
-    db.query(models.OTPCode).filter(
-        models.OTPCode.email == user.email
-    ).delete()
+        # 4. معالجة الأطفال (صور + سجلات فحصهم + حذفهم)
+        for child in user.children:
+            # أ. حذف سجلات فحص هذا الطفل من جدول الـ ScanLog
+            db.query(models.ScanLog).filter(
+                models.ScanLog.matchedchildid == child.childid
+            ).delete(synchronize_session=False)
 
-    db.delete(user)
-    db.commit()
-    return {"message": "Account and all associated data have been permanently deleted."}
+            # ب. حذف صورة الطفل من Cloudinary
+            if child.face_scan and child.face_scan.imageurl:
+                utils.delete_image_from_cloud(child.face_scan.imageurl)
+            
+            # ج. حذف سجل الطفل نفسه (يدوياً لضمان الدقة)
+            db.delete(child)
 
+        # 5. حذف صورة المواطن الشخصية من Cloudinary
+        if user.face_scan and user.face_scan.imageurl:
+            utils.delete_image_from_cloud(user.face_scan.imageurl)
+
+        # 6. حذف سجلات الـ OTP المرتبطة بإيميل المستخدم
+        db.query(models.OTPCode).filter(
+            models.OTPCode.email == user.email
+        ).delete(synchronize_session=False)
+
+        # 7. الحذف النهائي للمستخدم
+        db.delete(user)
+        
+        # تنفيذ كل العمليات أعلاه في قاعدة البيانات كدفعة واحدة
+        db.commit()
+        
+        return {"message": "Account and all associated data have been permanently deleted."}
+
+    except Exception as e:
+        db.rollback() # تراجع عن أي عملية حذف إذا حدث خطأ مفاجئ
+        print(f"❌ Critical Deletion Error: {e}")
+        raise HTTPException(status_code=500, detail="An error occurred while cleaning up account data.")
 
 # =============================================================================
 # GET /user/children

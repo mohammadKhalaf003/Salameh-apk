@@ -1,13 +1,10 @@
 import os
 import random
-import smtplib
 import requests 
-import resend
 import uuid
 import cloudinary
 import cloudinary.uploader
 from datetime import datetime, timedelta, timezone
-from email.message import EmailMessage
 from typing import Optional
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -16,7 +13,6 @@ from passlib.context import CryptContext
 from dotenv import load_dotenv
 from PIL import Image, ImageOps
 import io
-from typing import Optional
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
 
@@ -27,11 +23,6 @@ load_dotenv()
 # ------------------------------------------------------------------
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# CONFLICT RESOLVED:
-#   Codebase A raised a hard RuntimeError if SECRET_KEY is missing (safer).
-#   Codebase B fell back to a hardcoded default (dangerous in production).
-#   Decision: keep Codebase A's hard-fail behaviour — a missing SECRET_KEY
-#   must never silently use a known default string.
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise RuntimeError("FATAL: SECRET_KEY not found in .env file!")
@@ -76,21 +67,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> dict:
-    """
-    Decodes JWT and returns a dict with unified key names.
-
-    CONFLICT RESOLVED:
-      Codebase A returned {"user_id": ..., "role": ..., "email": ...}
-      Codebase B returned {"userid": ..., "role": ..., "email": ...}
-
-      All routers in both codebases access the user id from this dict, so the
-      key name must be consistent everywhere.
-
-      Decision: use "user_id" (with underscore) — matches Codebase A's routers
-      which are the more complete set (user.py, face.py).  Codebase B's routers
-      (paramedic.py) used "userid"; those references are updated in the merged
-      paramedic router to use "user_id" instead.
-    """
     try:
         token   = credentials.credentials
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
@@ -106,82 +82,87 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Token is invalid or expired")
 
 # ------------------------------------------------------------------
-# Email — OTP delivery
+# Email — OTP delivery via SendGrid (SMTP-free, works on Railway)
 # ------------------------------------------------------------------
- # تأكد من وجودها في أعلى الملف
-
-# def send_real_email_otp(target_email: str) -> Optional[str]:
-#     otp_code = str(random.randint(100000, 999999))
-#     api_key = os.getenv("BREVO_KEY") # استخدم الـ API Key اللي طلعناه من Brevo
-
-#     # 1. اطبع الكود فوراً في الـ Logs (عشان تشوفه من لابتوبك الـ ASUS)
-#     print(f"🚀 [LIVE DEMO] OTP for {target_email} is: {otp_code}")
-
-#     # 2. محاولة الإرسال عبر الـ API (وليس SMTP)
-#     try:
-#         response = requests.post(
-#             "https://api.brevo.com/v3/smtp/email",
-#             headers={
-#                 "api-key": api_key,
-#                 "Content-Type": "application/json"
-#             },
-#             json={
-#                 "sender": {"name": "Salamah System", "email": "medicalsystemjo@gmail.com"},
-#                 "to": [{"email": target_email}],
-#                 "subject": "Verification Code - Salamah",
-#                 "htmlContent": f"<html><body><h1>Your code is: {otp_code}</h1></body></html>"
-#             },
-#             timeout=10
-#         )
-        
-#         if response.status_code in [200, 201, 202]:
-#             print(f"✅ OTP sent via API to {target_email}")
-#         else:
-#             print(f"⚠️ API Status: {response.status_code} - {response.text}")
-
-#         # 3. الحل الجوهري: رجّع الكود بكل الأحوال عشان التطبيق ما يعطي Error
-#         return otp_code
-
-#     except Exception as e:
-#         print(f"❌ Critical Error: {e}")
-#         # إذا انقطع النت تماماً، استخدم كود الطوارئ
-#         return "202626"
-
-
 def send_real_email_otp(target_email: str) -> Optional[str]:
     otp_code = str(random.randint(100000, 999999))
 
     api_key = os.getenv("SENDGRID_API_KEY")
+    sender  = os.getenv("SENDER_EMAIL", "medicalsystemjo@gmail.com")
 
     if not api_key:
-        print("❌ SENDGRID_API_KEY not found")
+        print("❌ SENDGRID_API_KEY not found in environment variables")
         return None
 
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 480px; margin: auto;
+                background: #f4f7fb; padding: 30px; border-radius: 12px;">
+      <div style="background: #1A3A5C; padding: 20px; border-radius: 10px 10px 0 0; text-align: center;">
+        <h2 style="color: white; margin: 0;">🚑 Salamah Medical</h2>
+      </div>
+      <div style="background: white; padding: 30px; border-radius: 0 0 10px 10px; text-align: center;">
+        <p style="color: #444; font-size: 16px;">Your verification code is:</p>
+        <div style="font-size: 42px; font-weight: bold; letter-spacing: 10px;
+                    color: #FF6A2B; margin: 20px 0;">{otp_code}</div>
+        <p style="color: #888; font-size: 13px;">This code expires in 10 minutes.<br>
+           If you did not request this, please ignore this email.</p>
+      </div>
+    </div>
+    """
+
     message = Mail(
-        from_email="medicalsystemjo@gmail.com",  # لازم يكون Verified
+        from_email=sender,
         to_emails=target_email,
-        subject="Salamah Account Verification",
-        html_content=f"<strong>Your OTP is: {otp_code}</strong>"
+        subject="Salamah — Verification Code",
+        html_content=html_content,
     )
 
     try:
         sg = SendGridAPIClient(api_key)
-        sg.send(message)
-
-        print(f"✅ SendGrid Success: OTP sent to {target_email}")
+        response = sg.send(message)
+        print(f"✅ SendGrid OTP sent to {target_email} | Status: {response.status_code}")
         return otp_code
 
     except Exception as e:
-        print(f"❌ SendGrid Error: {e}")
+        print(f"❌ SendGrid Error sending to {target_email}: {e}")
+        if hasattr(e, 'body'):
+            print(f"   SendGrid body: {e.body}")
         return None
+
+
+# ------------------------------------------------------------------
+# Email — Generic HTML email via SendGrid
+# Used by /send-report-email in main.py (replaces smtplib completely)
+# ------------------------------------------------------------------
+def send_html_email(to_email: str, subject: str, html_content: str) -> bool:
+    api_key = os.getenv("SENDGRID_API_KEY")
+    sender  = os.getenv("SENDER_EMAIL", "medicalsystemjo@gmail.com")
+
+    if not api_key:
+        print("❌ SENDGRID_API_KEY not found")
+        return False
+
+    message = Mail(
+        from_email=sender,
+        to_emails=to_email,
+        subject=subject,
+        html_content=html_content,
+    )
+
+    try:
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        print(f"✅ SendGrid HTML email sent to {to_email} | Status: {response.status_code}")
+        return True
+    except Exception as e:
+        print(f"❌ SendGrid HTML email error: {e}")
+        if hasattr(e, 'body'):
+            print(f"   SendGrid body: {e.body}")
+        return False
+
 
 # ------------------------------------------------------------------
 # Cloudinary — upload
-# CONFLICT RESOLVED:
-#   Codebase A stripped the file extension from public_id to avoid
-#   double-extension issues (e.g. "file.jpg.jpg").
-#   Codebase B did not strip it.
-#   Decision: keep Codebase A's safer version.
 # ------------------------------------------------------------------
 def upload_image_to_cloud(
     image_bytes: bytes,
@@ -208,17 +189,6 @@ def upload_image_to_cloud(
 
 # ------------------------------------------------------------------
 # Cloudinary — delete
-# CONFLICT RESOLVED:
-#   Codebase A accepted a full Cloudinary URL and parsed out the public_id.
-#   Codebase B accepted a bare public_id string and prepended
-#   "salamah-medical/" to it.
-#
-#   The face router and user router in Codebase A always pass the full URL
-#   stored in FaceScan.imageurl / User.imageurl (e.g.
-#   "https://res.cloudinary.com/.../upload/v123/salamah-medical/users/123.jpg").
-#
-#   Decision: keep Codebase A's URL-parsing implementation — it is the one
-#   that matches the actual data stored in the database.
 # ------------------------------------------------------------------
 def delete_image_from_cloud(image_url: str) -> bool:
     try:
@@ -227,7 +197,6 @@ def delete_image_from_cloud(image_url: str) -> bool:
 
         after_upload  = image_url.split("/upload/")[1]
         parts         = after_upload.split("/")
-        # strip version segment (e.g. "v1234567")
         path_segments = parts[1:] if parts[0].startswith("v") else parts
         public_id     = "/".join(path_segments).rsplit(".", 1)[0]
 
@@ -240,8 +209,7 @@ def delete_image_from_cloud(image_url: str) -> bool:
 
 
 # ------------------------------------------------------------------
-# Image compression — KEPT from Codebase A (Codebase B did not have it)
-# Used in face.py register_face_logic to reduce bandwidth before upload.
+# Image compression
 # ------------------------------------------------------------------
 def compress_image_bytes(
     image_bytes: bytes,
@@ -249,7 +217,7 @@ def compress_image_bytes(
     quality: int  = 85
 ) -> bytes:
     img = Image.open(io.BytesIO(image_bytes))
-    img = ImageOps.exif_transpose(img)   # correct orientation
+    img = ImageOps.exif_transpose(img)
 
     if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
